@@ -3,5 +3,5 @@ projectKey=MihailKnyazev_plsql_coverage
 serverUrl=https://sonarcloud.io
 serverVersion=7.6.0.21360
 dashboardUrl=https://sonarcloud.io/dashboard?id=MihailKnyazev_plsql_coverage
-ceTaskId=AWiEWWY8Jg23j5wBGn2T
-ceTaskUrl=https://sonarcloud.io/api/ce/task?id=AWiEWWY8Jg23j5wBGn2T
+ceTaskId=AWiEW1XvUp4M6oss26o7
+ceTaskUrl=https://sonarcloud.io/api/ce/task?id=AWiEW1XvUp4M6oss26o7
