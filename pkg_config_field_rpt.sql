@@ -5,8 +5,8 @@ is
   function getwfpkey(xitorpk number,
     subXitorPK number,
     p_cfxtid number) return number;
-    
-    
+
+
   /**
    * Utility function to simplify access to Drill Down CF values
    * @param p_pk xitor.xitor_id of Primary Trackor Type
@@ -19,7 +19,7 @@ is
     p_xs_cfid config_field.config_field_id%type,
     p_cfid config_field.config_field_id%type)
     return number;
-    
+
 
   function getValStr (
     p_key_value in number,
@@ -36,7 +36,7 @@ is
     p_cfid in config_field.config_field_id%type)
     return varchar2
   as
-    v_val varchar2(16000);
+    v_val varchar2(32767);
     v_val_num config_value_number.value_number%type;
     v_vtable_pk number;
 
@@ -90,8 +90,10 @@ is
       v_val := getVTableLabel(v_vtable_pk, v_cf_row_attrib_v_table_id);
 
     elsif (v_cf_row_data_type in (5,7)) then --Memo,Rich Memo Editor
-      select substr(value_clob,1,3000) into v_val from config_value_clob
-      where config_field_id = p_cfid and key_value = p_key_value;
+      select substr(nvl(value_clob,value_char), 1, 3000) into v_val 
+        from config_value_char
+       where config_field_id = p_cfid 
+         and key_value = p_key_value;
 
     elsif (v_cf_row_data_type = 15) then --Electronic File
       select bl.filename into v_val
@@ -192,8 +194,11 @@ is
   as
     v_value_clob clob;
   begin
-    select substr(value_clob, 1, 30000) into v_value_clob from config_value_clob
-    where config_field_id = p_cfid and key_value = pk;
+    select substr(nvl(value_clob, value_char), 1, 30000) 
+      into v_value_clob 
+      from config_value_char
+     where config_field_id = p_cfid and key_value = pk;
+
     return v_value_clob;
   exception
     when others then
@@ -202,28 +207,36 @@ is
 
   function getLimitedValMemoByID(pk in number, p_cfid in config_field.config_field_id%type) return varchar2
   as
-    v_value_clob clob;
-    v_value varchar2(4000) := null;
-    len number;
-    suff varchar2(10) := '';
+      v_value_clob clob;
+      v_value varchar2(32767);
+      len number;
+      suff varchar2(10);
   begin
-    len := TextCellsDisplayLimit;
-    if len is null or len = 0 or len > 4000 then
-       len := 4000;
-    end if;
-    select value_clob into v_value_clob from config_value_clob
-    where config_field_id = p_cfid and key_value = pk;
+      len := TextCellsDisplayLimit;
+      if len is null or len = 0 or len > 4000 then
+         len := 4000;
+      end if;
 
-    if Length(v_value_clob) > TextCellsDisplayLimit then
-       suff := '...';
-    end if;
+      begin 
+          select nvl(value_clob, value_char) into v_value_clob 
+            from config_value_char
+           where config_field_id = p_cfid and key_value = pk;
+      exception
+          when no_data_found then 
+              v_value_clob := null;
+          when others then raise;    
+      end;
+    
+      if Length(v_value_clob) > TextCellsDisplayLimit then
+         suff := '...';
+      end if;
 
-    v_value := substr(v_value_clob, 1, len);
+      v_value := substr(v_value_clob, 1, len);
 
-    return v_value || suff;
+      return v_value || suff;
   exception
-    when others then
-      return null;
+      when others then
+          return dbms_utility.format_error_backtrace || dbms_utility.format_error_stack;
   end getLimitedValMemoByID;
 
   function getLimitedValMemo(pk in number, config_field_text in varchar2) return varchar2
@@ -236,8 +249,11 @@ is
   as
     v_value_clob clob;
   begin
-    select value_clob into v_value_clob from config_value_clob
-    where config_field_id = p_cfid and key_value = pk;
+     select nvl(value_clob, value_char) 
+      into v_value_clob 
+      from config_value_char
+     where config_field_id = p_cfid and key_value = pk;
+
     return v_value_clob;
   exception
     when others then
@@ -286,7 +302,6 @@ is
   exception when others then
      return 0;
   end getLineFileSizeByID;
-
 
   function getValStrYN(pk number, config_field_text varchar2) return varchar2
   as
@@ -367,8 +382,8 @@ is
        end;
        return i;
   end getAllValNumMultByID;
-  
-  
+
+
   function getAllValNumMultXS(
       p_pk number, 
       p_xs_cfid config_field.config_field_id%type, 
@@ -379,15 +394,15 @@ is
       v_key_value number;
   begin
     v_key_value := getXSkey(p_pk, p_xs_cfid, p_cfid);
-    
+
     if (v_key_value is not null) then
        v_val := getAllValNumMultByID(v_key_value, p_cfid);
     end if;
-    
+
     return v_val;
   end getAllValNumMultXS;
-  
-  
+
+
   function getValStrByStaticID (pk number, config_fieldid number) return varchar2
   as
    s varchar2(4000);
@@ -674,10 +689,8 @@ is
               select count(config_field_id) into ret from config_value_number v where v.config_field_id=rec.config_field_id and v.value_number is not null;
            elsif rec.data_type in (2,90,91) then
               select count(config_field_id) into ret from config_value_date v where v.config_field_id=rec.config_field_id and v.value_date is not null;
-           elsif rec.data_type in (0,30) then
+           elsif rec.data_type in (0, 30, 5, 7) then
               select count(config_field_id) into ret from config_value_char v where v.config_field_id=rec.config_field_id and v.value_char is not null;
-           elsif rec.data_type in (5,7) then
-              select count(config_field_id) into ret from config_value_clob v where v.config_field_id=rec.config_field_id and v.value_clob is not null;
            end if;
         end if;
     end loop;

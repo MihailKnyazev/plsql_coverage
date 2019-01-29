@@ -1,7 +1,0 @@
-organization=mihailknyazev-github
-projectKey=MihailKnyazev_plsql_coverage
-serverUrl=https://sonarcloud.io
-serverVersion=7.6.0.21360
-dashboardUrl=https://sonarcloud.io/dashboard?id=MihailKnyazev_plsql_coverage
-ceTaskId=AWiFFtrae5VxKu8MrNzt
-ceTaskUrl=https://sonarcloud.io/api/ce/task?id=AWiFFtrae5VxKu8MrNzt
