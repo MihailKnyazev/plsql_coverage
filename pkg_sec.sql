@@ -1,4 +1,4 @@
-CREATE OR REPLACE package body pkg_sec as
+CREATE OR REPLACE PACKAGE BODY PKG_SEC as
   g_cu number;
   g_lang_id number;
   g_pid number;
@@ -89,7 +89,6 @@ CREATE OR REPLACE package body pkg_sec as
     procedure set_pid(p_id number) as
         begin
           g_pid := p_id;
-          dbms_output.put_line(p_id);
     end;
 
     function get_pid return number is
@@ -144,9 +143,5 @@ CREATE OR REPLACE package body pkg_sec as
         end if;
     end fill_vars;
 
-    procedure reset_package as
-    begin
-        dbms_session.modify_package_state(dbms_session.reinitialize);
-    end;
-
 end pkg_sec;
+/
