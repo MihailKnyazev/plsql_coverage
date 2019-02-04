@@ -1,5 +1,5 @@
 <coverage version="1">
-<file path="PKG_CONFIG_FIELD_RPT.sql">
+<file path="pkg_config_field_rpt.sql">
 <lineToCover lineNumber="3" covered="true"/>
 <lineToCover lineNumber="30" covered="false"/>
 <lineToCover lineNumber="50" covered="true"/>
