@@ -1,8 +1,12 @@
-CREATE OR REPLACE PACKAGE BODY PKG_RELATION as
+CREATE OR REPLACE PACKAGE BODY PKG_RELATION 
+/*
+ * Copyright 2003-2021 OneVizion, Inc. All rights reserved.
+ */
+as
     procedure no_direct_table_mods as
     begin
       if not allowtablemods then
-        raise_application_error (-20000, 'Do not modify the table directly.  Use pkg_relation instead.');
+        raise_application_error (-20000, pkg_label.format(17705, pkg_label.list_label_params('package_name' => 'pkg_relation')));
       end if;
     end no_direct_table_mods;
 
@@ -19,47 +23,67 @@ CREATE OR REPLACE PACKAGE BODY PKG_RELATION as
     procedure new_relation(pid number, cid number, rtid number)
     as
         retval varchar2(1000);
-      strRel varchar2(1000);
-      p varchar2(200);
-      c varchar2(200);
-      c_xtid number;
-      ClassChildRelCnt number;
-         c_key varchar2(1000);
-      rel_cnt number;
+        strRel varchar2(1000);
+        p varchar2(200);
+        c varchar2(200);
+        c_xtid number;
+        ClassChildRelCnt number;
+        c_key varchar2(1000);
+        rel_cnt number;
+        v_cnt_child number;
+        v_cardinality_id relation_type.cardinality_id%type;
     begin
         if pid is null or cid is null then
-           select p.xitor_type, c.xitor_type into p, c from relation_type t, xitor_type p, xitor_type c
-            where t.relation_type_id=rtid
-             and t.parent_type_id=p.xitor_type_id and t.child_type_id=c.xitor_type_id;
-           strRel := p||'-->'||c;
-           if pid is null then
-              strRel := strRel || ', '||p||' is Null';
-           else
-              strRel := strRel || ', '||c||' is Null';
-           end if;
-           raise_application_error(-20000, '<ERRORMSG>ParentID/ChildID cannot be Null! ('||strRel||')</ERRORMSG>');
+            select p.xitor_type, c.xitor_type
+              into p, c
+              from relation_type t, xitor_type p, xitor_type c
+             where t.relation_type_id = rtid
+               and t.parent_type_id = p.xitor_type_id
+               and t.child_type_id = c.xitor_type_id;
+
+            strRel := p || '-->' || c;
+
+            if pid is null then
+                strRel := strRel || ', ' || p || '''s ID is Null';
+            else
+                strRel := strRel || ', ' || c || '''s ID is Null';
+            end if;
+
+            raise_application_error(-20000, pkg_label.format_wrapped(17706, pkg_label.list_label_params('relation_type' => strRel)));
         end if;
 
         begin
-          select child_type_id into c_xtid
-          from
-            relation_type rt, xitor p, xitor c
-          where
-            p.xitor_id = pid
-            and c.xitor_id = cid
-            and rt.parent_type_id = p.xitor_type_id
-            and rt.child_type_id = c.xitor_type_id
-            and rt.relation_type_id = rtid;
+            select rt.child_type_id, rt.cardinality_id
+              into c_xtid, v_cardinality_id
+              from relation_type rt, xitor p, xitor c
+             where p.xitor_id = pid
+               and c.xitor_id = cid
+               and rt.parent_type_id = p.xitor_type_id
+               and rt.child_type_id = c.xitor_type_id
+               and rt.relation_type_id = rtid;
         exception
-          when no_data_found then
-            begin
-              raise_application_error(-20000, '<ERRORMSG>TrackorTypeIDs of Parent (pid='||pid||') and Child (cid='||cid||') do not belong to RelationTypeId ('||rtid||')!</ERRORMSG>');
-            end;
+            when no_data_found then
+                begin
+                    raise_application_error(-20000, pkg_label.format_wrapped(17707, pkg_label.list_label_params('parent_id' => pid,
+                                                                                                                'child_id' => cid,
+                                                                                                                'rel_type_id' => rtid)));
+                end;
         end;
 
         check_relation_locks(rtid, cid);
 
-        --select child_type_id into c_xtid from relation_type where relation_type_id=rtid;
+        --check already assigned child for 1 to many relation
+        if v_cardinality_id = 2 then
+            select count(1) into v_cnt_child
+              from relation r
+             where r.relation_type_id = rtid
+               and r.child_id = cid;
+
+            if v_cnt_child <> 0 then
+                raise_application_error(-20000, pkg_label.format_wrapped(17708, pkg_label.list_label_params('child_id' => cid,
+                                                                                                            'parent_id' => pid)));
+            end if;
+        end if;
 
         --Check Parent Class-->Child restriction
         ClassChildRelCnt := 1;
@@ -73,24 +97,22 @@ CREATE OR REPLACE PACKAGE BODY PKG_RELATION as
             if ClassChildRelCnt = 0 then
                select xitor_key into c_key from xitor where xitor_id=cid;
 
-               raise_application_error(-20000, '<ERRORMSG>Cannot assign Child (Trackor ID: '||cid||'; Key="'||c_key||'") to Parent (Trackor ID: '|| pid ||'; Key="'||rec.xitor_key||'"; Class="'||rec.class_name||'"; Trackor Type="' || rec.xitor_type || '") due to ParentClass to child Trackors restriction.</ERRORMSG>');
+               raise_application_error(-20000, pkg_label.format_wrapped(17709, pkg_label.list_label_params('child_id' => cid,
+                                                                                                           'child_key' => c_key,
+                                                                                                           'parent_id' => pid,
+                                                                                                           'parent_key' => rec.xitor_key,
+                                                                                                           'class_name' => rec.class_name,
+                                                                                                           'trackor_type' => rec.xitor_type)));
             end if;
         end loop;
 
+        select count(1) into rel_cnt from relation
+         where child_id=cid and parent_id=pid and relation_type_id=rtid;
 
-        retval := null;
-        select count(*) into rel_cnt from relation 
-          where child_id=cid and parent_id=pid and relation_type_id=rtid;
-
-        if rel_cnt = 0 then  
+        if rel_cnt = 0 then
            allowtablemods := true;
            insert into relation (child_id, parent_id, relation_type_id)
            values (cid, pid, rtid);
-
-           retval := pkg_ruleator.execute_trigger(21, rtid, pid, cid);
-           if retval is not null then
-              raise_application_error(-20000, retval);
-           end if;
 
            --Add relations with parents into ancestor
            allowtablemods := true;
@@ -128,6 +150,10 @@ CREATE OR REPLACE PACKAGE BODY PKG_RELATION as
                values (s.p, s.c, s.parent_type_id, s.child_type_id);
            end loop;
 
+           retval := pkg_ruleator.execute_trigger(21, rtid, pid, cid);
+           if retval is not null then
+              raise_application_error(-20000, retval);
+           end if;
 
            check_relation_uniqueness(cid);
            pkg_wp.Add_Task_For_Relation(cid, pid);
@@ -185,8 +211,8 @@ CREATE OR REPLACE PACKAGE BODY PKG_RELATION as
         ) loop
             for rec_chld in (
                 select child_id
-                from relation rel 
-                where 
+                from relation rel
+                where
                     rel.relation_type_id=rec.relation_type_id
                     and rel.parent_id=oldpid
                     and rel.child_id in (
@@ -218,19 +244,19 @@ CREATE OR REPLACE PACKAGE BODY PKG_RELATION as
         v_pkey varchar2(4000 char);
         v_ckey varchar2(4000 char);
         v_child_ttid xitor_type.xitor_type_id%type;
-    begin 
-        select pkg_config_field_rpt.getValStrByStaticID(x.xitor_id, f.config_field_id) 
+    begin
+        select pkg_config_field_rpt.getValStrByStaticID(x.xitor_id, f.config_field_id)
           into v_pkey
           from xitor x, config_field f
-         where x.xitor_id = pid 
-           and f.xitor_type_id = x.xitor_type_id 
+         where x.xitor_id = pid
+           and f.xitor_type_id = x.xitor_type_id
            and f.is_static = 1 and f.config_field_name = 'XITOR_KEY';
 
-        select pkg_config_field_rpt.getValStrByStaticID(x.xitor_id, f.config_field_id), x.xitor_type_id 
+        select pkg_config_field_rpt.getValStrByStaticID(x.xitor_id, f.config_field_id), x.xitor_type_id
           into v_ckey, v_child_ttid
           from xitor x, config_field f
-         where x.xitor_id = cid 
-           and f.xitor_type_id = x.xitor_type_id 
+         where x.xitor_id = cid
+           and f.xitor_type_id = x.xitor_type_id
            and f.is_static = 1 and f.config_field_name = 'XITOR_KEY';
 
         pkg_audit.log_changes('RELATION',            -- tablename
@@ -268,12 +294,15 @@ CREATE OR REPLACE PACKAGE BODY PKG_RELATION as
            else
               strRel := strRel || ', '||c||' is Null';
            end if;
-           raise_application_error(-20000, '<ERRORMSG>ParentID/ChildID cannot be Null! ('||strRel||')</ERRORMSG>');
+           raise_application_error(-20000, pkg_label.format_wrapped(17706, pkg_label.list_label_params('relation_type' => strRel)));
         end if;
 
         --need to log relation deletion before rule calls to properly fill audit_call_stack_temp
-        log_relation_deletion(pid, cid, rtid);
+        if pkg_program.is_deleting = false then
+            log_relation_deletion(pid, cid, rtid);
+        end if;
 
+        --On "Before Relation Delete"
         retval := pkg_ruleator.execute_trigger(23, rtid, pid, cid);
         if retval is not null then
            raise_application_error(-20000, retval);
@@ -294,8 +323,20 @@ CREATE OR REPLACE PACKAGE BODY PKG_RELATION as
             -- if direct relation were deleted in prev statement
             -- delete relations between cid and all parents
             allowtablemods := true;
+
             delete from ancestor
-            where child_id = cid and paths_wout_xid(parent_id, cid, pid) = 0;
+             where child_id = cid
+               and parent_id in (with t as
+              --select parent node for child_id = cid which are linked through parent_id
+                                  (select r.parent_id
+                                     from relation r
+                                    where r.parent_id in (select a.parent_id
+                                                            from ancestor a
+                                                           where a.child_id = cid)
+                                    start with r.child_id = pid
+                                    connect by prior r.parent_id = r.child_id)
+                                 select t.parent_id from t
+                                  where pkg_relation.paths_wout_xid(t.parent_id, cid, pid) = 0);
         end if;
 
         -- delete indirect relations between pid and children of cid
@@ -333,22 +374,28 @@ CREATE OR REPLACE PACKAGE BODY PKG_RELATION as
         pkg_wp.Delete_tasks_for_relation(cid, pid);
 
         --delete records from blob_ancestor
-        delete from blob_ancestor b 
+        delete from blob_ancestor b
               where b.blob_id in (select b.blob_id
                                     from blob_ancestor b
                                    where b.blob_owner_id = cid)
                 and b.blob_owner_id = pid;
 
-        delete from blob_ancestor b 
-              where b.blob_id in (select b.blob_id 
-                                    from blob_ancestor b 
-                                   where b.blob_owner_id = cid) 
-                and b.blob_owner_id in (select a.parent_id 
-                                          from ancestor a 
+        delete from blob_ancestor b
+              where b.blob_id in (select b.blob_id
+                                    from blob_ancestor b
+                                   where b.blob_owner_id = cid)
+                and b.blob_owner_id in (select a.parent_id
+                                          from ancestor a
                                          where a.child_id = pid
-                                           and a.parent_id not in(select a2.parent_id 
-                                                                    from ancestor a2 
+                                           and a.parent_id not in(select a2.parent_id
+                                                                    from ancestor a2
                                                                    where a2.parent_id = a.parent_id and a2.child_id = cid));
+
+        --On "After Relation Delete"
+        retval := pkg_ruleator.execute_trigger(70, rtid, pid, cid);
+        if retval is not null then
+           raise_application_error(-20000, retval);
+        end if;
 
         allowtablemods := false;
     end del_relation_with_locks;
@@ -373,7 +420,7 @@ CREATE OR REPLACE PACKAGE BODY PKG_RELATION as
         select program_id into child_pid from xitor_type where xitor_type_id = cid;
 
         if parent_pid is not null and parent_pid <> child_pid then
-            raise_application_error(-20000,'<ERRORMSG>Parental and child Trackor Types are assigned to different programs</ERRORMSG>');
+            raise_application_error(-20000, pkg_label.get_label_system_wrapped(17710));
         end if;
 
         allowtablemods := true;
@@ -397,70 +444,12 @@ CREATE OR REPLACE PACKAGE BODY PKG_RELATION as
         recreate_ancestor_type(child_pid);
 
         allowtablemods := false;
+
+        pkg_trackor_restriction.enable_all_parent_propagations(cid);
+        pkg_trackor_restriction.propagate_xt_restriction(rtid);
+
         return rtid;
     end new_relation_type;
-
-
-    procedure del_relation_type_all(xid number)
-    as
-        v_pid xitor_type.program_id%type;
-    begin
-        select program_id into v_pid from xitor_type where xitor_type_id = xid;
-        pkg_sec_role.allowtablemods := true;
-
-        Delete from xitor_count where PARENT_CHILD_XT_ID=xid;
-        Delete from xitor_count_user where PARENT_CHILD_XT_ID=xid;
-
-        --Drop all relations when we are deleting a XitorType
-        for rec in (select     t.relation_type_id, t.parent_type_id,
-                               t.child_type_id
-                          from relation_type t, xitor_type m
-                         where m.xitor_type_id = t.child_type_id
-                    start with t.parent_type_id = xid
-                    connect by prior m.xitor_type_id = t.parent_type_id) loop
-
-            for sec_group_rec in (select sec_group_program_id from sec_group_program
-                where relation_type_id= rec.relation_type_id) loop
-                pkg_sec_priv_program.delete_sec_group(sec_group_rec.sec_group_program_id);
-            end loop;
-
-            pkg_sec_role.allowtablemods := true;
-            allowtablemods := true;
-
-            delete from relation_type
-                  where parent_type_id = rec.parent_type_id
-                    and child_type_id = rec.child_type_id;
-
-            delete from ancestor_type
-                  where parent_type_id = rec.parent_type_id
-                    and child_type_id = rec.child_type_id;
-
-        end loop;
-
-        for rec in (select parent_type_id, child_type_id, relation_type_id
-                      from relation_type
-                     where child_type_id = xid) loop
-            for sec_group_rec in (select sec_group_program_id from sec_group_program
-                where relation_type_id= rec.relation_type_id) loop
-                pkg_sec_priv_program.delete_sec_group(sec_group_rec.sec_group_program_id);
-            end loop;
-
-            pkg_sec_role.allowtablemods := true;
-            allowtablemods := true;
-            delete from relation_type
-                  where parent_type_id = rec.parent_type_id
-                    and child_type_id = rec.child_type_id;
-        end loop;
-
-        --recreate ancestor_type table
-        if not pkg_xitor_type.is_deleting then
-          allowtablemods := true;
-          recreate_ancestor_type(v_pid);
-          allowtablemods := false;
-        end if;
-        pkg_sec_role.allowtablemods := false;
-
-    end del_relation_type_all;
 
 
     procedure del_relation_type(rtid number)
@@ -472,7 +461,7 @@ CREATE OR REPLACE PACKAGE BODY PKG_RELATION as
 
         pkg_sec_role.allowtablemods:=true;
         allowtablemods := true;
-        select * into v_rel_type_row 
+        select * into v_rel_type_row
           from relation_type
          where relation_type_id = rtid;
 
@@ -492,6 +481,12 @@ CREATE OR REPLACE PACKAGE BODY PKG_RELATION as
             pkg_sec_priv_program.delete_sec_group(rec_sec.sec_group_program_id);
         end loop;
 
+        delete from rule_id_num
+         where id_num = rtid
+           and rule_id in (select rule_id from rule
+                            where rule_type_id in (pkg_ruleator.c_type_relation_created,
+                                                   pkg_ruleator.c_type_relation_deleted));
+
         --Delete this relation type
         allowtablemods := true;
         delete from relation_type
@@ -503,6 +498,9 @@ CREATE OR REPLACE PACKAGE BODY PKG_RELATION as
 
         pkg_sec_role.allowtablemods:=false;
         allowtablemods := false;
+
+        pkg_trackor_restriction.delete_filter_propagation_by_ttid(v_rel_type_row.child_type_id);
+
     end del_relation_type;
 
 
@@ -754,8 +752,8 @@ CREATE OR REPLACE PACKAGE BODY PKG_RELATION as
         childPID number;
         childXitorKey varchar2(2000);
         parentXTName label_program.label_program_text%type;
-        lbl1 label_program.label_program_text%type;
-        lbl2 label_program.label_program_text%type;
+        v_cnt number;
+        v_xitor_key xitor.xitor_key%type;
         lblChildKey label_program.label_program_text%type;
 
         cursor cur_parents(p_child_id in relation.child_id%type) is
@@ -792,27 +790,36 @@ CREATE OR REPLACE PACKAGE BODY PKG_RELATION as
 
                     if uniqueByXtID = childTypeID then
                         --The Xitor Key should be unique across itself within current Z/P
-                        for rec in (select 1 from dual where exists (select c.xitor_id from
-                            xitor c where c.xitor_type_id=childTypeID and (c.program_id=childPID or c.program_id is Null)
-                            and upper(c.xitor_key) = upper(childXitorKey) and c.xitor_id<>p_child_id))
-                        loop
-                            lbl1 := pkg_label.get_label_system(2848, pkg_sec.get_lang()); --'is not unique'
-                            raise_application_error(-20000, '<ERRORMSG>'||lblChildKey || ' "'||childXitorKey||'" '|| lbl1 ||'!</ERRORMSG>');
-                        end loop;
+                        select count(1) into v_cnt
+                          from dual
+                         where exists (select c.xitor_id
+                                         from xitor c
+                                        where c.xitor_type_id = childTypeID and (c.program_id = childPID or c.program_id is Null)
+                                          and upper(c.xitor_key) = upper(childXitorKey) and c.xitor_id <> p_child_id);
+                        if v_cnt > 0 then
+                            raise_application_error(-20000, pkg_label.format_wrapped(2848, pkg_label.list_label_params('trackor_label' => lblChildKey,
+                                                                                                                       'trackor_key' => childXitorKey)));
+                        end if;
                     else
                         --The Xitor Key should be unique across a specific Parent from some level above
-                        for rec in (
-                            select p.xitor_key 
+                        begin
+                            select p.xitor_key into v_xitor_key
                               from ancestor a,
                                   (select xitor_key, xitor_id from xitor p where p.xitor_id = rec_parents.parent_id) p,
-                                  (select xitor_key, xitor_id from xitor c where c.xitor_type_id=childTypeID and (c.program_id=childPID or c.program_id is Null)) c
-                             where a.child_id=c.xitor_id and a.parent_id=p.xitor_id and c.xitor_id<>p_child_id and
-                             upper(c.xitor_key) = upper(childXitorKey)) loop
+                                  (select xitor_key, xitor_id from xitor c where c.xitor_type_id = childTypeID and (c.program_id = childPID or c.program_id is Null)) c
+                             where a.child_id = c.xitor_id and a.parent_id = p.xitor_id and c.xitor_id <> p_child_id
+                               and upper(c.xitor_key) = upper(childXitorKey)
+                               and rownum = 1;
 
-                            lbl1 := pkg_label.get_label_system(2848, pkg_sec.get_lang()); --'is not unique'
-                            lbl2 := pkg_label.get_label_system(2849, pkg_sec.get_lang()); --'is not unique'
-                            raise_application_error(-20000, '<ERRORMSG>'||lblChildKey || ' "'||childXitorKey||'" '|| lbl1 ||' ' || lbl2 || ' ' ||parentXTName|| ' "'||rec.xitor_key||'"!</ERRORMSG>');
-                        end loop;
+                            raise_application_error(-20000, pkg_label.format_wrapped(2849, pkg_label.list_label_params('child_label' => lblChildKey,
+                                                                                                                       'child_key' => childXitorKey,
+                                                                                                                       'parent_label' => parentXTName,
+                                                                                                                       'parent_key' => v_xitor_key)));
+                        exception
+                            when no_data_found then
+                                v_xitor_key := '';
+                        end;
+
                      end if;
                 end if;
             end loop; --cur_uniq_by
@@ -850,7 +857,7 @@ CREATE OR REPLACE PACKAGE BODY PKG_RELATION as
         where xitor_id = p_cid and relation_type_id = p_rtid;
 
         if (v_locks > 0) then
-            raise_application_error(-20000, '<ERRORMSG>Can''t change locked relation</ERRORMSG>');
+            raise_application_error(-20000, pkg_label.get_label_system_wrapped(17711));
         end if;
     end check_relation_locks;
 
@@ -941,7 +948,7 @@ CREATE OR REPLACE PACKAGE BODY PKG_RELATION as
                     --Trackor already deleted
                     v_cnt:= 0;
             end;
-        end if;    
+        end if;
 
         return v_cnt;
     end get_parents_children_count;
@@ -1270,14 +1277,14 @@ CREATE OR REPLACE PACKAGE BODY PKG_RELATION as
         return ret;
     end get_order_by_for_parent_fields;
 
-    procedure recalc_blob_ancestor 
+    procedure recalc_blob_ancestor
     as
         v_cnt number := 0;
     begin
         allowtablemods := true;
-        for recrel in (select t.relation_type_id, t.parent_id, x.xitor_type_id, t.child_id, 
-                              (select count(*) from ancestor a where a.parent_id = t.child_id) cnt 
-                         from relation t, xitor x 
+        for recrel in (select t.relation_type_id, t.parent_id, x.xitor_type_id, t.child_id,
+                              (select count(*) from ancestor a where a.parent_id = t.child_id) cnt
+                         from relation t, xitor x
                         where t.is_updated = 1 and t.parent_id = x.xitor_id order by cnt) loop
 
             for rec in (select blob_id from blob_ancestor ba where ba.blob_owner_id = recrel.child_id) loop
@@ -1296,15 +1303,15 @@ CREATE OR REPLACE PACKAGE BODY PKG_RELATION as
                 end loop;
             end loop;
 
-            --Reset isUpdated flag          
-            update relation t set t.is_updated = 0 
+            --Reset isUpdated flag
+            update relation t set t.is_updated = 0
              where t.relation_type_id = recrel.relation_type_id and t.parent_id = recrel.parent_id and t.child_id = recrel.child_id;
 
             v_cnt := v_cnt + 1;
 
             if mod(v_cnt, 10000) = 0 then
                 commit;
-            end if;     
+            end if;
 
         end loop;
 
@@ -1373,6 +1380,39 @@ CREATE OR REPLACE PACKAGE BODY PKG_RELATION as
         return v_ttids;
     end get_parents_up_to_many_many;
 
+
+    function get_parent_trackor_types_up_to_many_many_inclusively(p_ttid in xitor_type.xitor_type_id%type) return tableofnum
+    as
+        v_result tableofnum;
+    begin
+        select distinct xt.xitor_type_id
+          bulk collect into v_result
+          from relation_type rt
+          join xitor_type xt on xt.xitor_type_id = rt.parent_type_id
+         where xt.is_static_definition = 0
+         start with rt.child_type_id = p_ttid
+       connect by prior rt.parent_type_id = rt.child_type_id 
+           and prior rt.cardinality_id <> gv_cardinality_many_to_many;
+
+        return v_result;
+    end get_parent_trackor_types_up_to_many_many_inclusively;
+
+
+    function get_direct_child_trackor_types(p_ttid in xitor_type.xitor_type_id%type) return tableofnum
+    as
+        v_result tableofnum;
+    begin
+        select distinct xt.xitor_type_id
+          bulk collect into v_result
+          from relation_type rt
+          join xitor_type xt on xt.xitor_type_id = rt.child_type_id
+         where rt.parent_type_id = p_ttid
+           and xt.is_static_definition = 0;
+
+        return v_result;
+    end get_direct_child_trackor_types;
+
+
     procedure unassign_fields(p_prim_ttid number, p_parent_ttid number, p_unassign_tid number default 1) as
         v_rtid relation_type.relation_type_id%type;
     begin
@@ -1409,6 +1449,75 @@ CREATE OR REPLACE PACKAGE BODY PKG_RELATION as
         );
 
     end unassign_fields;
+
+    procedure del_relation_type_by_trackor_type(p_ttid in xitor_type.xitor_type_id%type) as
+    begin
+        --unassing child relations
+        for rec in(select relation_type_id, on_parent_delete_cascade
+                     from relation_type
+                    where parent_type_id = p_ttid) loop
+
+            pkg_relation.del_relation_type(rec.relation_type_id);
+        end loop;
+
+        --delete relation where TT is in the end of the tree and root
+        for rec in(select t.relation_type_id
+                     from relation_type t
+                    where level = 1 
+                      and connect_by_isleaf = 1
+                    start with t.child_type_id = p_ttid
+                  connect by prior t.child_type_id = t.parent_type_id) loop
+
+            pkg_relation.del_relation_type(rec.relation_type_id);
+        end loop;
+
+    end del_relation_type_by_trackor_type;
+
+    function get_tree_related_trackor_types(p_primary_ttid in xitor_type.xitor_type_id%type) return tableofnum
+    as
+        v_result tableofnum;
+    begin
+        select distinct tt 
+          bulk collect into v_result
+          from(select p_primary_ttid as tt
+                 from dual
+                union
+                select column_value 
+                  from get_parent_trackor_types_up_to_many_many_inclusively(p_primary_ttid)
+                 union
+                select column_value 
+                  from get_direct_child_trackor_types(p_primary_ttid));
+
+        return v_result;
+    end get_tree_related_trackor_types;
+
+
+    function get_all_parents_by_ttid(p_ttid in relation_type.child_type_id%type) return tableofnum
+    as
+        v_parent_ttids tableofnum;
+    begin
+         select distinct rt.parent_type_id
+           bulk collect into v_parent_ttids
+           from relation_type rt
+          where rt.parent_type_id is not null
+          start with rt.child_type_id = p_ttid
+        connect by prior rt.parent_type_id = rt.child_type_id;
+
+        return v_parent_ttids;
+    end get_all_parents_by_ttid;
+
+    function get_all_children_by_ttid(p_ttid in relation_type.child_type_id%type) return tableofnum
+    as
+        v_children_ttids tableofnum;
+    begin
+         select distinct rt.child_type_id 
+           bulk collect into v_children_ttids
+           from relation_type rt
+          start with rt.parent_type_id = p_ttid
+        connect by prior rt.child_type_id = rt.parent_type_id;
+
+        return v_children_ttids;
+    end get_all_children_by_ttid;
 
 end pkg_relation;
 /
