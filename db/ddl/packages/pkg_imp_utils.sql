@@ -1,6 +1,6 @@
 CREATE OR REPLACE PACKAGE BODY PKG_IMP_UTILS 
 /*
- * Copyright 2003-2022 OneVizion, Inc. All rights reserved.
+ * Copyright 2003-2023 OneVizion, Inc. All rights reserved.
  */
 as
 
@@ -49,7 +49,7 @@ as
     end get_uniqby_xtid;
 
   function create_def_import(
-    p_rtid in relation_type.relation_type_id%type,
+    p_ttid in xitor_type.xitor_type_id%type,
     p_name in imp_spec.name%type)
     return imp_spec.imp_spec_id%type as
 
@@ -70,7 +70,6 @@ as
     v_parent_dt_param imp_data_type_param.imp_data_type_param_id%type;
     v_del_rel_dt_param imp_data_type_param.imp_data_type_param_id%type;
     v_spec_id imp_spec.imp_spec_id%type;
-    v_xtid xitor_type.xitor_type_id%type;
     v_xt xitor_type.xitor_type%type;
     v_is_autokey xitor_type.is_autokey%type;
     v_unique_by_xt_id relation_type.unique_by_xt_id%type;
@@ -78,8 +77,11 @@ as
     v_search_sql varchar2(4000);
     v_entity_id imp_entity.imp_entity_id%type;
     v_dmid imp_data_map.imp_data_map_id%type;
+
+    v_xtid xitor_type.xitor_type_id%type := p_ttid;
     i integer := 1;
     v_from varchar2(1000) := 'from ';
+
     v_where1 varchar2(1000);
     v_where2 varchar2(1000);
     v_where3 varchar2(1000);
@@ -114,9 +116,6 @@ as
       values(1, p_name, c_imp_desc, 'MM/DD/YYYY', 'HH24:MI:SS',
              'pkg_ext_imp.XitorConfiguredFieldLoad(:rid);', 1000061, 1000061, 1000061, '2,3,4')
       returning imp_spec_id into v_spec_id;
-
-      select child_type_id, v_unique_by_xt_id into v_xtid, v_unique_by_xt_id
-      from relation_type where relation_type_id = p_rtid;
 
       -- Create entity
       insert into imp_entity(imp_spec_id, sql_text, order_number, xitor_type_id,

@@ -1,6 +1,6 @@
 CREATE OR REPLACE PACKAGE PKG_IMP_UTILS 
 /*
- * Copyright 2003-2022 OneVizion, Inc. All rights reserved.
+ * Copyright 2003-2023 OneVizion, Inc. All rights reserved.
  */
     /**
      * Common utility functions and procedures whic is used in pkg_ext_imp
@@ -22,13 +22,13 @@ as
      * Create default import using pkg_ext_imp.XitorConfiguredFieldLoad.
      * Generate entity search sql based on relation_type.unique_by_xt_id value
      *
-     * @param p_rtid <code>relation_type.relation_type</code> import will
-     *        be created for child xitor type of specified relation type
+     * @param p_ttid <code>xitor_type.xitor_type_id</code> import will
+     *        be created for specified trackor type
      * @param p_name name of new import
      * @return <code>imp_spec.imp_spec_id</code>
      */
     function create_def_import(
-        p_rtid in relation_type.relation_type_id%type,
+        p_ttid in xitor_type.xitor_type_id%type,
         p_name in imp_spec.name%type)
         return imp_spec.imp_spec_id%type;
 
