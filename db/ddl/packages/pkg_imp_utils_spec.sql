@@ -18,7 +18,7 @@ as
      */
     function is_empty_str(p_value in varchar2) return boolean;
 
-    /**
+     /**
      * Create default import using pkg_ext_imp.XitorConfiguredFieldLoad.
      * Generate entity search sql based on relation_type.unique_by_xt_id value
      *
@@ -92,4 +92,6 @@ as
         p_rid in imp_run.imp_run_id%type,
         p_col_num in imp_run_grid_incr.col_num%type) return varchar2;
 end pkg_imp_utils;
+
 /
+
