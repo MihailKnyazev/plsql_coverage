@@ -717,6 +717,4 @@ as
     end import;
 
 end pkg_imp_run_column;
-
 /
-

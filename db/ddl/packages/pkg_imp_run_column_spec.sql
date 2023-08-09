@@ -62,6 +62,4 @@ as
         p_col_name imp_column.name%type);
 
 end pkg_imp_run_column;
-
 /
-

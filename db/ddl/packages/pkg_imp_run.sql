@@ -1351,8 +1351,6 @@ as
     v_rule_retval varchar2(4000);
     v_dgid dropgrid.dropgrid_id%type;
     begin
-      pkg_code_coverage.start_coverage_data_collection;
-      
       select imp_run_id into v_imp_run_id
       from imp_run
       where process_id = p_proc_id;
@@ -1460,8 +1458,6 @@ as
       end if;
 
       process_finish(p_proc_id);
-
-       pkg_code_coverage.stop_coverage_data_collection;
 
     exception
       when others then
@@ -2608,4 +2604,3 @@ as
 
 end pkg_imp_run;
 /
-
